@@ -1,0 +1,51 @@
+# ============================================================
+# REGIME DETECTOR CONFIG
+# All thresholds here — never hardcode in Python files
+# ============================================================
+
+data:
+  spx_ticker: "^GSPC"
+  qqq_ticker: "QQQ"
+  vix_ticker: "^VIX"
+  lookback_days: 504
+  yfinance_interval: "1d"
+
+thresholds:
+  # --- SPX BULL (all must be true) ---
+  spx_above_50ma: true
+  spx_above_200ma: true
+  breadth_50ma_bull: 0.60
+  breadth_200ma_bull: 0.50
+  vix_bull_max: 20.0
+
+  # --- NDX/TECH BULL (all must be true, AND with SPX) ---
+  # WHY: SPX can look fine while tech rolls over (2022 Q1)
+  qqq_above_50ma: true
+  ndx_breadth_50ma_bull: 0.55
+  ndx_breadth_200ma_bull: 0.45
+
+  # --- CRASH (any sufficient) ---
+  vix_crash_min: 30.0
+  breadth_200ma_crash: 0.35
+
+  # --- DISTRIBUTION ---
+  breadth_50ma_dist: 0.45
+
+  # --- Smoothing ---
+  label_smoothing_days: 3
+
+# TUNING:
+# SPX ok but NDX lagging → "chop" — right call for tech-heavy portfolios
+# More aggressive: lower ndx_breadth_50ma_bull to 0.50
+# More conservative: raise ndx_breadth_50ma_bull to 0.60
+# Calibrate against: 2022 Q1 (NDX -33% while SPX still near highs)
+
+output:
+  label_csv: "output/regime_labels.csv"
+  chart_html: "output/regime_dashboard.html"
+  latest_json: "output/regime_latest.json"
+
+alerts:
+  slack_enabled: false
+  slack_webhook_url: ""
+  alert_on_change_only: true
