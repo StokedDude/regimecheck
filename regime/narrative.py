@@ -10,6 +10,8 @@ import os
 import urllib.request
 from datetime import date
 from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()
 
 
 def generate_narrative(regime_json: dict, output_dir: str = "output") -> str:
