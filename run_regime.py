@@ -49,7 +49,7 @@ def main():
 
     logger.info(f"Starting regime run — {datetime.now().isoformat()}")
 
-    spx, qqq, vix, spx_b50, spx_b200, ndx_b50, ndx_b200 = fetch_all(
+    spx, qqq, vix, spx_b50, spx_b200, ndx_b50, ndx_b200, vix_short, vix_long = fetch_all(
         lookback_days=cfg_dict["data"]["lookback_days"],
         spx_ticker=cfg_dict["data"]["spx_ticker"],
         qqq_ticker=cfg_dict["data"].get("qqq_ticker", "QQQ"),
@@ -68,7 +68,7 @@ def main():
         _print_validation(df)
         return
 
-    write_outputs(df, cfg_dict)
+    write_outputs(df, cfg_dict, vix_short=vix_short, vix_long=vix_long)
 
     if not args.no_chart:
         build_dashboard(
@@ -145,24 +145,4 @@ if __name__ == "__main__":
     main()
 
 
-# ── Narrative (appended to main entry point) ──────────────────────────────────
-def run_narrative(output_dir="output"):
-    """Load today's regime JSON and generate AI narrative."""
-    from regime.narrative import generate_narrative
-    import json
-    from pathlib import Path
-
-    json_path = Path(output_dir) / "regime_latest.json"
-    if not json_path.exists():
-        print("⚠️  regime_latest.json not found — run without --narrative first")
-        return
-
-    regime_data = json.loads(json_path.read_text())
-    narrative = generate_narrative(regime_data, output_dir=output_dir)
-
-    if narrative:
-        print("\n" + "═"*55)
-        print("  AI NARRATIVE")
-        print("═"*55)
-        print(narrative)
-        print("═"*55 + "\n")
+# (duplicate run_narrative removed — definition above at line 122 is used)

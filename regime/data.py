@@ -19,7 +19,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import date, timedelta
-from typing import Tuple
+from typing import Optional, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
@@ -68,18 +68,25 @@ def fetch_all(
     spx_ticker: str = "^GSPC",
     qqq_ticker: str = "QQQ",
     vix_ticker: str = "^VIX",
-) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
+    vix_short_ticker: str = "^VIX9D",
+    vix_long_ticker: str = "^VIX3M",
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     """
-    Fetch SPX, QQQ, VIX, SPX breadth, and NDX breadth.
+    Fetch SPX, QQQ, VIX, VIX term-structure legs, SPX breadth, and NDX breadth.
 
-    Returns (7-tuple):
+    Returns (9-tuple):
         spx             : SPX close
         qqq             : QQQ close
-        vix             : VIX close
+        vix             : VIX spot close (30-day)
         spx_breadth_50  : % SPX sample above 50d SMA
         spx_breadth_200 : % SPX sample above 200d SMA
         ndx_breadth_50  : % NDX sample above 50d SMA
         ndx_breadth_200 : % NDX sample above 200d SMA
+        vix_short       : 9-day VIX (^VIX9D) — None series if unavailable
+        vix_long        : 3-month VIX (^VIX3M) — None series if unavailable
+
+    VIX term structure: contango when vix_short < vix_long (low near-term fear),
+    backwardation when vix_short > vix_long (near-term fear elevated vs medium-term).
     """
     start = (date.today() - timedelta(days=lookback_days + 60)).strftime("%Y-%m-%d")
     end = date.today().strftime("%Y-%m-%d")
@@ -100,13 +107,17 @@ def fetch_all(
     qqq.index = pd.to_datetime(qqq.index).normalize()
     qqq = qqq.reindex(spx.index).ffill()
 
-    # --- VIX ---
+    # --- VIX spot ---
     vix_raw = yf.download(vix_ticker, start=start, end=end, progress=False, auto_adjust=False)
     if vix_raw.empty:
         raise ValueError(f"No VIX data for {vix_ticker}")
     vix = vix_raw["Close"].squeeze()
     vix.index = pd.to_datetime(vix.index).normalize()
     vix = vix.reindex(spx.index).ffill()
+
+    # --- VIX term structure (best-effort — degrade to None if unavailable) ---
+    vix_short = _fetch_vix_leg(vix_short_ticker, start, end, spx.index, label="VIX9D")
+    vix_long  = _fetch_vix_leg(vix_long_ticker,  start, end, spx.index, label="VIX3M")
 
     # --- SPX breadth ---
     logger.info(f"Fetching SPX breadth ({len(SPX_BREADTH_SAMPLE)} tickers)...")
@@ -121,7 +132,30 @@ def fetch_all(
         raise ValueError(f"Only {len(spx)} SPX bars — need at least 210")
 
     logger.info(f"Data ready: {len(spx)} days, latest={spx.index[-1].date()}")
-    return spx, qqq, vix, spx_b50, spx_b200, ndx_b50, ndx_b200
+    return spx, qqq, vix, spx_b50, spx_b200, ndx_b50, ndx_b200, vix_short, vix_long
+
+
+def _fetch_vix_leg(
+    ticker: str,
+    start: str,
+    end: str,
+    target_index: pd.DatetimeIndex,
+    label: str = "",
+) -> Optional[pd.Series]:
+    """Fetch a single VIX index series; returns None if unavailable."""
+    try:
+        raw = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=False)
+        if raw.empty:
+            logger.warning(f"  {label} ({ticker}): no data — term structure will show n/a")
+            return None
+        s = raw["Close"].squeeze()
+        s.index = pd.to_datetime(s.index).normalize()
+        s = s.reindex(target_index).ffill()
+        logger.info(f"  {label} ({ticker}): fetched, latest={float(s.dropna().iloc[-1]):.2f}")
+        return s
+    except Exception as e:
+        logger.warning(f"  {label} ({ticker}): fetch failed ({e}) — term structure will show n/a")
+        return None
 
 
 def _compute_breadth(

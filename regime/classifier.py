@@ -25,6 +25,8 @@ from pathlib import Path
 from datetime import date
 from typing import Optional
 
+from regime_dashboard import RegimeSnapshot, render_dashboard
+
 logger = logging.getLogger(__name__)
 
 REGIME_ORDER = ["bull_trend", "chop", "distribution", "crash"]
@@ -285,8 +287,72 @@ def get_current_regime(df: pd.DataFrame) -> dict:
     return out
 
 
-def write_outputs(df: pd.DataFrame, cfg_dict: dict) -> None:
-    """Write CSV labels, latest JSON, and print summary to stdout."""
+def _build_snapshot(
+    df: pd.DataFrame,
+    current: dict,
+    vix_short: Optional[pd.Series] = None,
+    vix_long: Optional[pd.Series] = None,
+) -> RegimeSnapshot:
+    """Convert the classified df + current regime dict into a RegimeSnapshot."""
+    # 12-month return from available history (up to 252 trading days)
+    spx_12m_return = None
+    lookback = min(252, len(df) - 1)
+    if lookback > 50:
+        past = float(df["spx"].iloc[-(lookback + 1)])
+        now  = float(df["spx"].iloc[-1])
+        if past > 0:
+            spx_12m_return = (now - past) / past
+
+    # Near ATH — within 5% of all-time high in the dataset
+    spx_near_ath = None
+    if len(df) > 10:
+        ath = float(df["spx"].max())
+        spx_near_ath = float(df["spx"].iloc[-1]) >= ath * 0.95
+
+    # Breadth stored as 0–1 in df/current; RegimeSnapshot expects 0–100
+    def _pct(key: str) -> Optional[float]:
+        v = current.get(key)
+        return v * 100 if v is not None else None
+
+    # Latest scalar from a Series; None if series absent or last value NaN
+    def _latest(s: Optional[pd.Series]) -> Optional[float]:
+        if s is None:
+            return None
+        v = s.dropna()
+        return float(v.iloc[-1]) if len(v) else None
+
+    return RegimeSnapshot(
+        data_date        = current["as_of_date"],
+        regime           = current["regime"],
+        spx              = current["spx_close"],
+        qqq              = current.get("qqq_close"),
+        vix              = current["vix_close"],
+        vix_short        = _latest(vix_short),
+        vix_long         = _latest(vix_long),
+        spx_above_50ma   = current["spx_above_50ma"],
+        spx_above_200ma  = current["spx_above_200ma"],
+        qqq_above_50ma   = current.get("qqq_above_50ma"),
+        spx_breadth_50d  = _pct("spx_breadth_50"),
+        spx_breadth_200d = _pct("spx_breadth_200"),
+        ndx_breadth_50d  = _pct("ndx_breadth_50"),
+        ndx_breadth_200d = _pct("ndx_breadth_200"),
+        spx_12m_return   = spx_12m_return,
+        spx_near_ath     = spx_near_ath,
+        spx_high_low     = None,
+        qqq_ret          = None,
+        qqqe_ret         = None,
+        economic_regime  = None,
+        sentiment_regime = None,
+    )
+
+
+def write_outputs(
+    df: pd.DataFrame,
+    cfg_dict: dict,
+    vix_short: Optional[pd.Series] = None,
+    vix_long: Optional[pd.Series] = None,
+) -> None:
+    """Write CSV labels, latest JSON, and print enriched dashboard to stdout."""
     out = Path(cfg_dict["output"]["label_csv"])
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -300,22 +366,6 @@ def write_outputs(df: pd.DataFrame, cfg_dict: dict) -> None:
     json_path.write_text(json.dumps(current, indent=2))
     logger.info(f"Latest regime written to {json_path}")
 
-    # Console summary
-    print("\n" + "="*55)
-    print("REGIME DETECTOR — CURRENT STATUS")
-    print("="*55)
-    print(f"  Data through   : {current['as_of_date']}")
-    print(f"  Regime         : {current['emoji']} {current['regime'].upper()}")
-    print(f"  SPX            : {current['spx_close']}")
-    print(f"  VIX            : {current['vix_close']}")
-    print(f"  SPX above 50MA : {'✅' if current['spx_above_50ma'] else '❌'}")
-    print(f"  SPX above 200MA: {'✅' if current['spx_above_200ma'] else '❌'}")
-    print(f"  SPX breadth 50d: {current['spx_breadth_50']:.1%}")
-    print(f"  SPX breadth 200d:{current['spx_breadth_200']:.1%}")
-    if "qqq_close" in current:
-        print(f"  QQQ            : {current['qqq_close']}")
-        print(f"  QQQ above 50MA : {'✅' if current['qqq_above_50ma'] else '❌'}")
-    if "ndx_breadth_50" in current:
-        print(f"  NDX breadth 50d: {current['ndx_breadth_50']:.1%}")
-        print(f"  NDX breadth 200d:{current['ndx_breadth_200']:.1%}")
-    print("="*55 + "\n")
+    # Enriched console dashboard
+    snapshot = _build_snapshot(df, current, vix_short=vix_short, vix_long=vix_long)
+    render_dashboard(snapshot)
