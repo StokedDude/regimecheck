@@ -53,7 +53,7 @@ NDX_BREADTH_SAMPLE = [
     # Software / cloud
     "ADBE","CRM","INTU","ORCL","PANW","SNPS","CDNS","FTNT","WDAY","TEAM",
     # Next-gen SaaS / cybersecurity
-    "CRWD","DDOG","ZS","NET","SNOW","MDB","HUBS","NOW","VEEV","ANSS",
+    "CRWD","DDOG","ZS","NET","SNOW","MDB","HUBS","NOW","VEEV","TTD",
     # Consumer tech / platforms
     "NFLX","ABNB","PYPL","MELI","PDD",
     # Biotech on NDX
